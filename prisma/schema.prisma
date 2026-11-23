@@ -1,0 +1,142 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model CompanyMonitor {
+  id             String          @id @default(cuid())
+  ownerEmail     String
+  name           String
+  careersUrl     String
+  atsType        String          // "greenhouse" | "lever" | "ashby" | "generic"
+  schedule       String          @default("daily") // "daily" | "weekly"
+  alertEmails    String          // Stored as JSON array string
+  webhookUrl     String?
+  active         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  scanRuns       ScanRun[]
+  auditSnapshots AuditSnapshot[]
+  alertEvents    AlertEvent[]
+
+  @@index([ownerEmail])
+}
+
+model ScanRun {
+  id              String            @id @default(cuid())
+  monitorId       String?
+  sourceUrl       String
+  atsType         String
+  status          String            @default("pending") // "pending" | "running" | "completed" | "failed"
+  startedAt       DateTime          @default(now())
+  finishedAt      DateTime?
+  jobsFound       Int               @default(0)
+  regulatedJobs   Int               @default(0)
+  violations      Int               @default(0)
+  complianceScore Int               @default(100)
+  fineLow         Int               @default(0)
+  fineHigh        Int               @default(0)
+  publicToken     String            @unique @default(cuid())
+  contentHash     String?
+  monitor         CompanyMonitor?   @relation(fields: [monitorId], references: [id], onDelete: SetNull)
+  results         JobAuditResult[]
+  auditSnapshots  AuditSnapshot[]
+  alertEvents     AlertEvent[]
+
+  @@index([monitorId, startedAt])
+  @@index([publicToken])
+}
+
+model JobAuditResult {
+  id              String   @id @default(cuid())
+  scanRunId       String
+  externalId      String
+  title           String
+  location        String
+  jurisdictions   String   // JSON string array e.g. ["CA", "Remote-US"]
+  rawText         String
+  salaryMin       Float?
+  salaryMax       Float?
+  currency        String?  @default("USD")
+  period          String?  @default("annual") // "annual" | "hourly" | "monthly"
+  spreadRatio     Float?
+  checks          String   // JSON payload of detailed check outcomes
+  violationCodes  String   // JSON array e.g. ["MISSING_SALARY", "EXCESSIVE_SPREAD"]
+  severity        String   @default("pass") // "pass" | "warning" | "violation"
+  fineLow         Int      @default(0)
+  fineHigh        Int      @default(0)
+  suggestedClause String?
+  scanRun         ScanRun  @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+
+  @@index([scanRunId])
+  @@index([severity])
+}
+
+model AuditSnapshot {
+  id             String          @id @default(cuid())
+  scanRunId      String
+  monitorId      String?
+  createdAt      DateTime        @default(now())
+  payload        String          // JSON snapshot of scan stats & compliance digest
+  sha256         String          @unique
+  previousSha256 String?
+  scanRun        ScanRun         @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+  monitor        CompanyMonitor? @relation(fields: [monitorId], references: [id], onDelete: SetNull)
+
+  @@index([scanRunId])
+  @@index([createdAt])
+}
+
+model AlertEvent {
+  id        String          @id @default(cuid())
+  monitorId String?
+  scanRunId String
+  channel   String          // "email" | "webhook" | "console"
+  sentAt    DateTime        @default(now())
+  status    String          // "delivered" | "failed" | "skipped"
+  details   String?
+  monitor   CompanyMonitor? @relation(fields: [monitorId], references: [id], onDelete: SetNull)
+  scanRun   ScanRun         @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+
+  @@index([scanRunId])
+}
+
+model EventLog {
+  id        String   @id @default(cuid())
+  eventType String   // "scan_started" | "report_viewed" | "trial_clicked" | "clause_copied" | "alert_opened"
+  metadata  String?  // JSON string
+  createdAt DateTime @default(now())
+
+  @@index([eventType])
+}
+
+model CompanyProfile {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  name            String
+  careersUrl      String
+  atsType         String   // "greenhouse" | "lever" | "ashby" | "generic"
+  complianceScore Int      @default(100)
+  grade           String   @default("A") // "A" | "B" | "C" | "D" | "F"
+  totalJobs       Int      @default(0)
+  regulatedJobs   Int      @default(0)
+  violations      Int      @default(0)
+  jurisdictions   String   // JSON string array e.g. ["CA", "NY", "CO", "WA", "IL"]
+  spreadFlags     Int      @default(0)
+  benefitFlags    Int      @default(0)
+  aiFlags         Int      @default(0)
+  lastScannedAt   DateTime @default(now())
+  claimed         Boolean  @default(false)
+  claimedBy       String?
+  scanRunId       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([slug])
+  @@index([complianceScore])
+}
+
